@@ -39,6 +39,7 @@ class DataDrivenSolver:
         n_neighbors=1,
         idx=None,
         save_history=False,
+        w1=0.5, w2=0.5
     ):
         """
         Solve the static equilibrium problem for the truss structure using a
@@ -103,13 +104,19 @@ class DataDrivenSolver:
             u, eps, _ = self.truss.solve(
                 A=A, E=E_num, U_dict=U_dict, sig0=sig0, construct_K=construct_K
             )
-
+            import copy
             # Solve the 2nd problem for eta driven by initial stress and applied force
             sig0 = eps_sig_[:, 1]
+            sig0 = w1 / w2 * sig0
+            F_dict_sc = copy.deepcopy(F_dict)
+            for point_id, F in F_dict_sc.items():
+                F[0] = w1 / w2 * F[0]
+                F[1] = w1 / w2 * F[1]
+
             _, eps_eta, _ = self.truss.solve(
-                A=A, E=E_num, U_dict=U_dict_0, F_dict=F_dict, sig0=sig0
+                A=A, E=E_num, U_dict=U_dict_0, F_dict=F_dict_sc, sig0=sig0
             )
-            sig = eps_sig_[:, 1] + E_num * eps_eta
+            sig = eps_sig_[:, 1] + w2/w1 * E_num * eps_eta
 
             # Find the nearest material data points
             eps_sig = np.hstack([eps.reshape((-1, 1)), sig.reshape((-1, 1))])
@@ -160,11 +167,11 @@ class DataDrivenSolver:
         eps_sig_rescaled[:, 0] *= self.sqE
         eps_sig_rescaled[:, 1] /= self.sqE
 
-        dist, idx = self.data_tree.query(eps_sig_rescaled, k=n_neighbors, n_jobs=-1)
+        dist, idx = self.data_tree.query(eps_sig_rescaled, k=n_neighbors)
         if n_neighbors > 1:
             dist = dist.mean(axis=1)
             k_means = self.data_tree.data[idx].mean(axis=1)
-            _, idx = self.data_tree.query(k_means, k=1, n_jobs=-1)
+            _, idx = self.data_tree.query(k_means, k=1)
 
         f_obj = self.truss.integrate(dist)
         eps_sig_optimal = self.material_data[idx]
